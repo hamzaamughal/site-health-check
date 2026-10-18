@@ -17,6 +17,14 @@ function diagnosis(score: number) {
   return { title: "Needs attention soon", line: "Several serious issues are likely turning customers away every day." };
 }
 
+function isOwnerBrowser() {
+  try {
+    return localStorage.getItem("hc_owner") === "1";
+  } catch {
+    return false;
+  }
+}
+
 function hostOf(u: string) {
   try {
     return new URL(/^https?:\/\//i.test(u) ? u : `https://${u}`).hostname.replace(/^www\./, "");
@@ -69,6 +77,7 @@ export default function Home() {
   const [celebrate, setCelebrate] = useState(false);
   const [sending, setSending] = useState(false);
   const [leadError, setLeadError] = useState<string | null>(null);
+  const [ownerNote, setOwnerNote] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fixesRef = useRef<HTMLDivElement>(null);
@@ -80,7 +89,7 @@ export default function Home() {
     setTimeout(() => stageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
   }
 
-  async function analyze(target: string) {
+  async function analyze(target: string, src?: string) {
     const clean = target.trim();
     if (!clean || loading) return;
     setChecking(hostOf(clean));
@@ -93,7 +102,7 @@ export default function Home() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: clean }),
+        body: JSON.stringify({ url: clean, src: src || undefined, owner: isOwnerBrowser() || undefined }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "The check didn't finish. Try again in a minute.");
@@ -111,10 +120,17 @@ export default function Home() {
   useEffect(() => {
     if (autoRan.current) return;
     autoRan.current = true;
-    const param = new URLSearchParams(window.location.search).get("url");
+    const qs = new URLSearchParams(window.location.search);
+    if (qs.get("owner") === "1") {
+      try {
+        localStorage.setItem("hc_owner", "1");
+        setOwnerNote(true);
+      } catch {}
+    }
+    const param = qs.get("url");
     if (param) {
       setUrl(param.replace(/^https?:\/\//i, ""));
-      void analyze(param);
+      void analyze(param, qs.get("src") || undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -216,7 +232,11 @@ export default function Home() {
           {error ? (
             <p className="error" role="alert">{error}</p>
           ) : (
-            <p className="trust">Uses Google&apos;s own speed test plus 14 real-world checks.</p>
+            <p className="trust">
+              {ownerNote
+                ? "Owner mode on: checks from this browser won't send you open alerts."
+                : "Uses Google's own speed test plus 14 real-world checks."}
+            </p>
           )}
           <Ecg beats={9} className="hero-ecg" />
         </section>
